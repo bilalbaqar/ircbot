@@ -4,7 +4,7 @@ import sys
 import time
 import logging
 
-from  ircgmailbackend import GMAILClient
+from ircgmailbackend import GMAILClient
 
 start_time = time.time()
 
@@ -12,6 +12,7 @@ server = "irc.freenode.net"       #settings
 channel ="#channelname"
 botnick = "botname"
 LOG = logging.getLogger(__name__)
+connection_timeout = 0
 
 def format_log(log_path, enable_debug):
     if not os.path.exists(log_path):
@@ -35,18 +36,44 @@ def format_log(log_path, enable_debug):
 def log(msg):
     LOG.debug(msg)
 
+def retry_count(count):
+    time.sleep(10)
+    return count+1
+
+def irc_login():
+    global irc
+    irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #defines the socket
+    log("connecting to:"+server)
+    irc.connect((server, 6667))                                                         #connects to the server
+    log('irc connected')
+    irc.send("USER "+ botnick +" "+ botnick +" "+ botnick +" :This is an IRC bot!\n") #user authentication
+    irc.send("NICK "+ botnick +"\n")                            #sets nick
+    irc.send("PRIVMSG" + " NICKSERV :identify " + "<PASSWORD>" +"\n")
+    irc.send("JOIN "+ channel +"\n")        #join the chan
+    log("channel joined...")
+
 format_log('./log', True)
-irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #defines the socket
-log("connecting to:"+server)
-irc.connect((server, 6667))                                                         #connects to the server
-irc.send("USER "+ botnick +" "+ botnick +" "+ botnick +" :This is an IRC bot!\n") #user authentication
-irc.send("NICK "+ botnick +"\n")                            #sets nick
-irc.send("PRIVMSG" + " NICKSERV :identify " + "<PASSWORD>" +"\n")
-irc.send("JOIN "+ channel +"\n")        #join the chan
+irc = None
+irc_login()
 
 while 1:    #puts it in a loop
-   text=irc.recv(2040)  #receive the text
+   try:
+       text=irc.recv(2040)  #receive the text
+       log('receiving irc data: {}'.format(text))
+       if not text:
+           raise ValueError('Empty response')
+   except:
+       if connection_timeout > 10:
+           log('IRC disconnected from server! No more retries left!')
+           sys.exit(1)
+       else:
+           log('Connection disconnected. Retrying...')
+           connection_timeout=retry_count(connection_timeout)
+           log('Connection timeout: %s' % connection_timeout)
+           irc_login()
+           continue
 
+   log('respone')
    log(text)   #print text to console
 
    if text.find('PING') != -1:                          #check if 'PING' is found
